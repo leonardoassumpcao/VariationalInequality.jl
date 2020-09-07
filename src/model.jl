@@ -1,15 +1,18 @@
 
 mutable struct VIPData
     F::Array{JuMP.NonlinearExpression,1}
-    var::Array{JuMP.Variable,1}
-    relation::Dict{JuMP.Variable, JuMP.NonlinearExpression}
+    var::Array{VariableRef,1}
+    relation::Dict{VariableRef, JuMP.NonlinearExpression}
 end
 
-function VIPModel(solver=Ipopt.IpoptSolver(print_level=0))
-    m = Model(solver=solver)
-    m.ext[:VIP] = VIPData(Array{JuMP.NonlinearExpression}[], Array{JuMP.Variable}[], Dict{JuMP.Variable, JuMP.NonlinearExpression}() )
+
+function VIPModel(optimizer=Ipopt.Optimizer)
+    m = JuMP.Model(with_optimizer(optimizer, max_cpu_time=60.0, print_level=1))     ### print_level=0 ?
+
+    m.ext[:VIP] = VIPData(Array{JuMP.NonlinearExpression}[], Array{VariableRef}[], Dict{VariableRef, JuMP.NonlinearExpression}() )
     return m
 end
+
 
 function getVIPData(m::Model)
     if haskey(m.ext, :VIP)
@@ -18,7 +21,6 @@ function getVIPData(m::Model)
         error("The 'getVIPData' function is only for VIP models as in VariationalInequality.jl")
     end
 end
-
 
 
 @eval const $(Symbol("@mapping")) = $(Symbol("@NLexpression"))
@@ -42,32 +44,33 @@ end
 
 
 
-
 ################################################################################
 # correspond interface
 # The most basic/important one. All other interfaces call this method.
-function innerproduct(m::Model, expression::JuMP.NonlinearExpression, variable::JuMP.Variable)
+function innerproduct(m::Model, expression::JuMP.NonlinearExpression, variable::VariableRef)
     data = getVIPData(m)
     data.relation[variable] = expression
 end
+
 # Alternative
-function innerproduct(m::Model, variable::JuMP.Variable, expression::JuMP.NonlinearExpression)
+function innerproduct(m::Model, variable::VariableRef, expression::JuMP.NonlinearExpression)
     innerproduct(m, expression, variable)
 end
 
-
+#=
 # Do we need the below?
-# function correspond(m::Model, variables::Array{JuMP.Variable,1}, expressions::Array{JuMP.NonlinearExpression,1})
-#     correspond(m, expressions, variables)
-# end
-# function correspond(m::Model, expressions::Array{JuMP.NonlinearExpression,1}, variables::Array{JuMP.Variable,1})
-#     @assert length(expressions) == length(variables)
-#     for i in 1:length(variables)
-#         correspond(m, expressions[i], variables[i])
-#     end
-# end
+function correspond(m::Model, variables::Array{VariableRef,1}, expressions::Array{JuMP.NonlinearExpression,1})
+    correspond(m, expressions, variables)
+end
+function correspond(m::Model, expressions::Array{JuMP.NonlinearExpression,1}, variables::Array{VariableRef,1})
+    @assert length(expressions) == length(variables)
+    for i in 1:length(variables)
+        correspond(m, expressions[i], variables[i])
+    end
+end
+=#
 
-function innerproduct(m::Model, expressions::Array{JuMP.NonlinearExpression}, variables::Array{JuMP.Variable})
+function innerproduct(m::Model, expressions::Array{JuMP.NonlinearExpression}, variables::Array{VariableRef})
     expressions = collect(expressions)
     variables = collect(variables)
     @assert length(expressions) == length(variables)
@@ -75,57 +78,59 @@ function innerproduct(m::Model, expressions::Array{JuMP.NonlinearExpression}, va
         innerproduct(m, expressions[i], variables[i])
     end
 end
-function innerproduct(m::Model, variables::Array{JuMP.Variable}, expressions::Array{JuMP.NonlinearExpression})
+
+function innerproduct(m::Model, variables::Array{VariableRef}, expressions::Array{JuMP.NonlinearExpression})
     innerproduct(m, expressions, variables)
 end
 
+#=
 # Do we need the below?
-# function correspond(m::Model, expressions::JuMP.JuMPArray, variables::JuMP.JuMPArray)
-#     variables = collect(variables.innerArray)
-#     expressions = collect(expressions.innerArray)
-#     @assert length(expressions) == length(variables)
-#     for i in 1:length(variables)
-#         correspond(m, expressions[i], variables[i])
-#     end
-# end
+function correspond(m::Model, expressions::JuMP.JuMPArray, variables::JuMP.JuMPArray)
+    variables = collect(variables.innerArray)
+    expressions = collect(expressions.innerArray)
+    @assert length(expressions) == length(variables)
+    for i in 1:length(variables)
+        correspond(m, expressions[i], variables[i])
+    end
+end
+=#
 ################################################################################
 
 
+#=
+function setVIP(m::Model, expressions::Array{JuMP.NonlinearExpression,1}, variables::Array{VariableRef,1})
+    @assert length(expressions) == length(variables)
 
-# function setVIP(m::Model, expressions::Array{JuMP.NonlinearExpression,1}, variables::Array{JuMP.Variable,1})
-#     @assert length(expressions) == length(variables)
-#
-#     data = getVIPData(m)
-#     data.F = expressions
-#     data.var = variables
-#
-#     return m
-# end
+    data = getVIPData(m)
+    data.F = expressions
+    data.var = variables
 
+    return m
+end
+=#
 
-# function solveVIP(m::Model    ; step_size=0.01,
-#                                 algorithm=:fixed_point,
-#                                 tolerance=1e-10,
-#                                 max_iter=1000            )
-#
-#     F = getVIPData(m).F
-#     var = getVIPData(m).var
-#     @assert length(F) == length(var)
-#     dim = length(F)
-#
-#     x0 = zeros(dim)
-#
-#     return solveVIP(m, x0, step_size=step_size, algorithm=algorithm, tolerance=tolerance, max_iter=max_iter)
-#
-# end
+#=
+function solveVIP(m::Model    ; step_size=0.01,
+                                algorithm=:fixed_point,
+                                tolerance=1e-10,
+                                max_iter=1000            )
 
+    F = getVIPData(m).F
+    var = getVIPData(m).var
+    @assert length(F) == length(var)
+    dim = length(F)
+
+    x0 = zeros(dim)
+
+    return solveVIP(m, x0, step_size=step_size, algorithm=algorithm, tolerance=tolerance, max_iter=max_iter)
+
+end
+=#
 
 
 # Copied from JuMP.jl
 # internal method that doesn't print a warning if the value is NaN
-_get_value(v::JuMP.Variable) = v.m.colVal[v.col]
-
-
+_get_value(v::VariableRef) = (has_values(v.model) ? value(v) : NaN)
 
 
 function clear_values(m)
@@ -138,7 +143,7 @@ end
 function initial_projection(m::JuMP.Model)
     relation = getVIPData(m).relation
 
-    initial_values = Dict{JuMP.Variable, Float64}()
+    initial_values = Dict{VariableRef, Float64}()
     for variable in keys(relation)
         val = _get_value(variable)
         if isnan(val)
@@ -148,8 +153,14 @@ function initial_projection(m::JuMP.Model)
     end
 
     @objective(m, Min, sum( ( variable - initial_values[variable] )^2 for variable in keys(relation) ) )
-    status = solve(m)
-    @assert status==:Optimal
+
+    optimize!(m)
+    status = termination_status(m)
+
+    @show status
+    @show m
+
+    @assert status == MOI.LOCALLY_SOLVED || status == MOI.OPTIMAL
 end
 
 function gap_function(m)
@@ -158,10 +169,8 @@ function gap_function(m)
     y = get_current_x(relation)
     Fy = get_current_F(relation)
 
-    @objective(m, Max,
-        sum( Fy[j] * ( y[j] - var[j] ) for j in 1:length(var))
-    )
-    solve(m)
+    @objective(m, Max, sum( Fy[j] * ( y[j] - var[j] ) for j in 1:length(var)) )
+    optimize!(m)
     return getobjectivevalue(m)
 end
 
@@ -178,11 +187,7 @@ function save_solution(m)
     return solution, F_value, gap
 end
 
-function solveVIP(m::Model;    step_size=0.01,
-                                algorithm=:fixed_point,
-                                tolerance=1e-6,
-                                max_iter=1000            )
-
+function solveVIP(m::Model; step_size=0.01, algorithm=:fixed_point, tolerance=1e-6, max_iter=1000)
     initial_projection(m)
 
     if algorithm==:fixed_point
